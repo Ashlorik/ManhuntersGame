@@ -1,0 +1,654 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Manhunt FPV</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Space+Grotesk:wght@500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+/* Layout: экран игры на всю высоту, поверх него тонкий HUD. Одна тёмная тема намеренно (ночная игра). */
+:root{--bg:#06080a;--panel:#0d1311;--line:#1c2a24;--text:#d7e6df;--muted:#6f857c;--hider:#3dff9a;--seeker:#ffb02e;--zone:#ff3b3b;
+  --font-d:"Space Grotesk",system-ui,sans-serif;--font-m:"JetBrains Mono",ui-monospace,monospace;color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 var(--font-d);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px}
+.app{height:100%;display:flex;flex-direction:column;gap:10px;max-width:980px;margin:0 auto}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:18px;letter-spacing:.18em;text-transform:uppercase}
+.seg{display:flex;border:1px solid var(--line);border-radius:3px;overflow:hidden}
+.seg button{background:transparent;color:var(--muted);border:0;padding:8px 11px;font:700 11px var(--font-d);letter-spacing:.08em;text-transform:uppercase;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--line);color:var(--text)}
+.stage{position:relative;flex:1;min-height:420px;border:1px solid var(--line);background:#000;overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none}
+#gl{position:absolute;inset:0;width:100%;height:100%;display:block}
+.vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%);transition:box-shadow .2s}
+.vig.out{box-shadow:inset 0 0 120px 30px rgba(255,40,40,.55)}
+.vig.ping{box-shadow:inset 0 0 80px 10px rgba(255,59,59,.28)}
+.banner{position:absolute;left:10px;right:10px;top:10px;text-align:center;pointer-events:none;font:600 12px var(--font-m);letter-spacing:.06em;text-transform:uppercase;
+  padding:6px 10px;background:rgba(6,8,10,.7);border:1px solid var(--line)}
+.banner.ping{color:var(--zone);border-color:var(--zone)}.banner.warn{color:var(--seeker);border-color:var(--seeker)}
+.log{position:absolute;left:10px;bottom:10px;max-width:60%;pointer-events:none;font:400 11px/1.5 var(--font-m);color:var(--muted)}
+.log div:first-child{color:var(--text)}
+.btns{position:absolute;right:10px;bottom:10px;display:flex;gap:8px}
+.btns button{font:700 12px var(--font-d);letter-spacing:.08em;text-transform:uppercase;color:var(--text);background:rgba(13,19,17,.8);border:1px solid var(--line);padding:12px 14px;border-radius:3px;cursor:pointer}
+.stick{position:absolute;width:110px;height:110px;margin:-55px 0 0 -55px;border:1px solid rgba(215,230,223,.35);border-radius:50%;pointer-events:none;display:none}
+.stick i{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;background:rgba(215,230,223,.25)}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;background:rgba(6,8,10,.86);padding:24px}
+.overlay.hidden{display:none}
+.overlay h2{margin:0;font-size:26px;letter-spacing:.14em;text-transform:uppercase}
+.overlay p{margin:0;color:var(--muted);max-width:44ch}
+.overlay button{font:700 13px var(--font-d);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;color:var(--bg);background:var(--hider);border:0;padding:12px 24px;border-radius:3px}
+button:focus-visible{outline:2px solid var(--text);outline-offset:2px}
+.note{margin:0;color:var(--muted);font-size:12px}
+
+.chip{font:600 11px var(--font-m);letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border:1px solid var(--line);color:var(--muted)}
+.overlay{overflow-y:auto;justify-content:flex-start}
+.screen{margin:auto;display:flex;flex-direction:column;align-items:center;gap:14px;width:100%;max-width:620px;text-align:center}
+.screen h3{margin:0;font-size:20px;letter-spacing:.14em;text-transform:uppercase}
+.menu{display:flex;flex-direction:column;gap:10px;width:min(320px,100%)}
+.overlay button{font:700 13px var(--font-d);letter-spacing:.1em;text-transform:uppercase;cursor:pointer;color:var(--text);background:rgba(13,19,17,.9);border:1px solid var(--line);padding:13px 22px;border-radius:3px}
+.overlay button.primary{color:var(--bg);background:var(--hider);border-color:var(--hider)}
+.overlay button.ghost{color:var(--muted)}
+.overlay button:disabled{opacity:.45;cursor:not-allowed}
+.overlay em{font:600 10px var(--font-m);font-style:normal;letter-spacing:.08em;margin-left:8px;padding:2px 6px;border:1px solid var(--line);color:var(--seeker)}
+.row{display:flex;flex-direction:column;gap:8px;width:100%;align-items:stretch;text-align:left}
+.row>label{font:600 11px var(--font-m);letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.row .seg{width:100%}.row .seg button{flex:1;border:0;border-radius:0;padding:10px 6px;font-size:12px;background:transparent;color:var(--muted)}
+.row .seg button[aria-pressed="true"]{background:var(--line);color:var(--text)}
+.hint{margin:0;font-size:12px;color:var(--muted);min-height:2.8em}
+.maps{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.overlay .maps button.card{display:flex;flex-direction:column;gap:6px;align-items:stretch;text-align:left;text-transform:none;letter-spacing:0;padding:0;overflow:hidden;font-weight:500}
+.card .pv{height:34px}.card .tx{padding:0 10px 10px;display:flex;flex-direction:column;gap:3px}
+.card b{font:700 13px var(--font-d);letter-spacing:.04em;text-transform:uppercase}.card span{font-size:11px;color:var(--muted);line-height:1.35}
+.overlay .maps button.card[aria-pressed="true"]{border-color:var(--hider);box-shadow:inset 0 0 0 1px var(--hider)}
+.actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;width:100%}
+.field{width:min(320px,100%);padding:12px;background:var(--panel);border:1px solid var(--line);color:var(--muted);font:600 13px var(--font-m);letter-spacing:.2em;text-align:center}
+</style>
+
+<div class="app">
+  <header>
+    <h1>Manhunt <span style="color:var(--muted)">/ FPV</span></h1>
+    <span class="chip" id="mapChip" hidden></span>
+  </header>
+  <div class="stage" id="stage">
+    <canvas id="gl"></canvas>
+    <div class="vig" id="vig"></div>
+    <div class="banner" id="banner"></div>
+    <div class="log" id="log"></div>
+    <div class="btns"><button id="bPhone">Телефон</button><button id="bMenu">Меню</button></div>
+    <div class="stick" id="stick"><i></i></div>
+    <div class="overlay" id="overlay">
+      <section class="screen" id="sMain">
+        <h2 style="margin:0;font-size:30px;letter-spacing:.2em;text-transform:uppercase">Manhunt</h2>
+        <p style="margin:0;color:var(--muted);max-width:44ch">Прятки на местности. Зона сужается, пинги выдают всех. Беглецы прячутся, охотники ловят.</p>
+        <div class="menu">
+          <button class="primary" id="mBots">Игра с ботами</button>
+          <button class="ghost" id="mOnline">Онлайн<em>скоро</em></button>
+        </div>
+        <p class="note">Компьютер: клик по сцене, мышь, WASD, Shift бег, Q убрать или поднять телефон.<br>Телефон: левый палец ходьба, правый палец обзор.</p>
+      </section>
+      <section class="screen" id="sSetup" hidden>
+        <h3>Игра с ботами</h3>
+        <div class="row"><label>Карта</label><div class="maps" id="mapCards"></div></div>
+        <div class="row"><label>Сложность ботов</label><div class="seg" id="segDiff"></div><p class="hint" id="diffHint"></p></div>
+        <div class="row"><label>Ваша роль</label><div class="seg" id="segRole"></div></div>
+        <div class="row"><label>Игроков в матче</label><div class="seg" id="segPl"></div></div>
+        <div class="row"><label>Скорость времени</label><div class="seg" id="segSp"></div></div>
+        <div class="actions"><button class="ghost" id="sBack">Назад</button><button class="primary" id="sStart">Старт</button></div>
+      </section>
+      <section class="screen" id="sOnline" hidden>
+        <h3>Онлайн</h3>
+        <p style="margin:0;color:var(--muted);max-width:44ch">Комнаты по коду и живые игроки появятся, когда подключим сервер. Пока кнопки неактивны.</p>
+        <div class="menu"><button disabled>Создать комнату</button><div class="field">КОД КОМНАТЫ</div><button disabled>Войти</button></div>
+        <div class="actions"><button class="ghost" id="oBack">Назад</button></div>
+      </section>
+      <section class="screen" id="sPause" hidden>
+        <h3>Пауза</h3>
+        <div class="menu"><button class="primary" id="pResume">Продолжить</button><button class="ghost" id="pMenu">В меню</button></div>
+      </section>
+      <section class="screen" id="sEnd" hidden>
+        <h2 id="ovTitle" style="margin:0">Итог</h2>
+        <p id="ovText" style="margin:0;color:var(--muted);max-width:44ch"></p>
+        <div class="actions"><button class="ghost" id="eMenu">В меню</button><button class="primary" id="eAgain">Ещё раз</button></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+  const $ = s => document.querySelector(s);
+  const CFG = { head: 30, stage: 60, shrinkLen: 20, pingEvery: 45, pingLen: 6, pingOffset: 10, round: 330, catchR: 2.6, outLimit: 12 };
+  let STAGES = [150, 115, 85, 60, 38, 22];
+  let WR = 168, PITCH = 46, BLK = 34, GN = 3;
+  const DIFF = {
+    easy:   { label: 'Лёгкий',      hint: 'Видят близко, бегают медленнее вас, после пинга путают позиции и долго раздумывают.', seekSpeed: 3.4, sight: 15, bushSight: 4, noise: 14, react: 2.2, fleeD: 20, fleeSp: 3.4, smartHide: 0, coord: false, patrol: false },
+    normal: { label: 'Нормальный',  hint: 'Равны вам по скорости. Пинг даёт почти точные позиции, беглецы прячутся в кустах.', seekSpeed: 4.2, sight: 24, bushSight: 6, noise: 5, react: .8, fleeD: 32, fleeSp: 4.3, smartHide: 1, coord: false, patrol: false },
+    hard:   { label: 'Сложный',     hint: 'Быстрые и зоркие, делят цели между собой, прочёсывают кусты. Беглецы прячутся подальше от охотников.', seekSpeed: 4.9, sight: 32, bushSight: 9, noise: 0, react: .2, fleeD: 42, fleeSp: 4.9, smartHide: 2, coord: true, patrol: true }
+  };
+  let DF = DIFF.normal;
+
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function mulberry(a){return()=>{a|=0;a=a+0x6D2B79F5|0;let x=Math.imul(a^a>>>15,1|a);x=x+Math.imul(x^x>>>7,61|x)^x;return((x^x>>>14)>>>0)/4294967296}}
+  const fmt = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+
+  // ---------- renderer ----------
+  const cvs = $('#gl');
+  const renderer = new THREE.WebGLRenderer({ canvas: cvs, antialias: true });
+  renderer.autoClear = false;
+  renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene();
+  const FOG = 0x04060a;
+  scene.background = new THREE.Color(FOG);
+  scene.fog = new THREE.FogExp2(FOG, 0.017);
+  const camera = new THREE.PerspectiveCamera(72, 1, 0.05, 400);
+  camera.rotation.order = 'YXZ';
+  scene.add(camera);
+  scene.add(new THREE.HemisphereLight(0x2a3a55, 0x0a0c0e, 0.55));
+  const moon = new THREE.DirectionalLight(0x4a6088, 0.35); moon.position.set(-60, 120, 40); scene.add(moon);
+  const camGlow = new THREE.PointLight(0x66ffcc, 0.35, 7); scene.add(camGlow);
+
+  const vmScene = new THREE.Scene();
+  const vmCam = new THREE.PerspectiveCamera(72, 1, 0.01, 10);
+  vmScene.add(new THREE.AmbientLight(0x8a8a88, 0.8));
+  const vmKey = new THREE.DirectionalLight(0x9fb4c8, 0.5); vmKey.position.set(-0.3, 1, 0.6); vmScene.add(vmKey);
+  const phoneLight = new THREE.PointLight(0x66ffcc, 0.9, 1.4); vmScene.add(phoneLight);
+
+  // ---------- textures ----------
+  function canvasTex(w, h, fn, rep) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h; fn(c.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(c); t.anisotropy = 4;
+    if (rep) { t.wrapS = t.wrapT = THREE.RepeatWrapping; }
+    return t;
+  }
+  const rg = mulberry(5);
+  const winTex = canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) if (rg() < .11) {
+      g.fillStyle = rg() < .6 ? '#ffd48a' : '#9fd0ff'; g.fillRect(x * 16 + 3, y * 16 + 3, 10, 10);
+    }
+  }, true);
+  const glowTex = canvasTex(128, 128, (g, w) => {
+    const gr = g.createRadialGradient(w / 2, w / 2, 0, w / 2, w / 2, w / 2);
+    gr.addColorStop(0, 'rgba(255,190,110,.9)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, w);
+  });
+  const wallTex = canvasTex(8, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, h, 0, 0); gr.addColorStop(0, 'rgba(255,60,60,1)'); gr.addColorStop(.12, 'rgba(255,40,40,.45)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+
+  // ---------- maps ----------
+  const MAPS = {
+    city: { name: 'Ночной город', desc: 'Кварталы, окна, фонари. Кусты между домами.', seed: 11, GN: 3, PITCH: 46, BLK: 34, parkP: .22, bw: [16, 30], bh: [9, 31], bushPark: 6, bushBlock: 2, lampP: .4, fog: .017, sky: 0x04060a, lampHex: 0xffd9a0, lampCol: 0xffbf70, win: .6, road: '#0b0d0f', pad: '#15191b', stages: [150, 115, 85, 60, 38, 22], prev: ['#1b2127', '#ffd48a'] },
+    park: { name: 'Ночной парк', desc: 'Сплошные заросли, редкие павильоны, густой туман.', seed: 23, GN: 3, PITCH: 46, BLK: 34, parkP: .8, bw: [8, 14], bh: [3.5, 5.5], bushPark: 6, bushBlock: 4, lampP: .16, fog: .026, sky: 0x03070a, lampHex: 0xcfe8ff, lampCol: 0x9fc4ff, win: .3, road: '#0d1114', pad: '#0d1a12', stages: [150, 115, 85, 60, 38, 22], prev: ['#0d1a12', '#3dff9a'] },
+    yard: { name: 'Промзона', desc: 'Склады и контейнеры, кустов мало. Прячьтесь за стенами.', seed: 37, GN: 2, PITCH: 62, BLK: 50, parkP: .1, bw: [28, 44], bh: [6, 13], bushPark: 2, bushBlock: 1, containers: true, lampP: .55, fog: .012, sky: 0x070605, lampHex: 0xffb060, lampCol: 0xff9a40, win: .25, road: '#100e0c', pad: '#1a1816', stages: [130, 100, 74, 52, 32, 18], prev: ['#1a1816', '#ff9a40'] }
+  };
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x0d1013, roughness: 1 });
+  const bushGeo = new THREE.IcosahedronGeometry(1.15, 0), bushMat = new THREE.MeshStandardMaterial({ color: 0x0f2a1b, roughness: 1, flatShading: true });
+  const SH = new Set([roofMat, bushGeo, bushMat, glowTex, winTex]);
+  function disposeGroup(g) {
+    g.traverse(o => {
+      if (o.geometry && !SH.has(o.geometry)) o.geometry.dispose();
+      const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of ms) if (!SH.has(m)) { if (m.map && !SH.has(m.map)) m.map.dispose(); if (m.emissiveMap) m.emissiveMap.dispose(); m.dispose(); }
+    });
+  }
+  const lampLights = []; for (let i = 0; i < 6; i++) { const l = new THREE.PointLight(0xffbf70, 1.1, 30, 1.6); scene.add(l); lampLights.push(l); }
+  let mapGroup = null, curKey = null, boxes = [], bushes = [], lamps = [];
+
+  function buildMap(key) {
+    const M = MAPS[key]; curKey = key;
+    if (mapGroup) { scene.remove(mapGroup); disposeGroup(mapGroup); }
+    mapGroup = new THREE.Group(); scene.add(mapGroup);
+    GN = M.GN; PITCH = M.PITCH; BLK = M.BLK; STAGES = M.stages; WR = (GN + .5) * PITCH + 4;
+    boxes = []; bushes = []; lamps = [];
+    scene.background.setHex(M.sky); scene.fog.color.setHex(M.sky); scene.fog.density = M.fog;
+    lampLights.forEach(l => l.color.setHex(M.lampCol));
+    const rc = mulberry(M.seed), add = o => { mapGroup.add(o); return o; };
+
+    const gt = canvasTex(512, 512, (g, w, h) => {
+      g.fillStyle = M.road; g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 2600; i++) { g.fillStyle = 'rgba(255,255,255,' + (rg() * .03) + ')'; g.fillRect(rg() * w, rg() * h, 2, 2); }
+      const sc = w / PITCH, side = BLK * sc, o = (w - side) / 2;
+      g.fillStyle = M.pad; g.fillRect(o, o, side, side);
+      g.strokeStyle = '#2a3034'; g.lineWidth = 4; g.strokeRect(o, o, side, side);
+      g.strokeStyle = 'rgba(210,190,120,.45)'; g.lineWidth = 3; g.setLineDash([22, 18]);
+      g.beginPath(); g.moveTo(0, 0); g.lineTo(w, 0); g.moveTo(0, h); g.lineTo(w, h); g.moveTo(0, 0); g.lineTo(0, h); g.moveTo(w, 0); g.lineTo(w, h); g.stroke();
+    }, true);
+    gt.repeat.set(GN * 2 + 3, GN * 2 + 3);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(PITCH * (GN * 2 + 3), PITCH * (GN * 2 + 3)), new THREE.MeshStandardMaterial({ map: gt, roughness: .95, metalness: 0 }));
+    ground.rotation.x = -Math.PI / 2; add(ground);
+
+    const bm = [];
+    const cluster = (x, z, n) => { for (let i = 0; i < n; i++) { const bx = x + (rc() - .5) * 4, bz = z + (rc() - .5) * 4; bm.push([bx, bz, 1 + rc() * .5, .8 + rc() * .5, 1 + rc() * .5, rc() * 6]); bushes.push({ x: bx, z: bz, r: 2 }); } };
+    const cols = [0x5a2a22, 0x233a52, 0x2a4a38, 0x4a4030];
+    for (let i = -GN; i <= GN; i++) for (let j = -GN; j <= GN; j++) {
+      const cx = i * PITCH, cz = j * PITCH, park = (i === 0 && j === 0) || rc() < M.parkP;
+      if (park) { for (let k = 0; k < M.bushPark; k++) cluster(cx + (rc() - .5) * (BLK - 6), cz + (rc() - .5) * (BLK - 6), 3); continue; }
+      const w = M.bw[0] + rc() * (M.bw[1] - M.bw[0]), d = M.bw[0] + rc() * (M.bw[1] - M.bw[0]), h = M.bh[0] + rc() * (M.bh[1] - M.bh[0]);
+      const x = cx + (rc() - .5) * (BLK - w), z = cz + (rc() - .5) * (BLK - d);
+      const mx = winTex.clone(), mz = winTex.clone(); mx.needsUpdate = mz.needsUpdate = true;
+      mx.repeat.set(d / 4, h / 4); mz.repeat.set(w / 4, h / 4);
+      const side = t => new THREE.MeshStandardMaterial({ color: 0x1b2127, roughness: .9, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: M.win });
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), [side(mx), side(mx), roofMat, roofMat, side(mz), side(mz)]);
+      m.position.set(x, h / 2, z); add(m);
+      boxes.push({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2, cx: x, cz: z });
+      if (M.containers) for (let k = 0; k < 3; k++) {
+        const horiz = rc() < .5, cw = horiz ? 12 : 2.6, cd = horiz ? 2.6 : 12, qx = cx + (rc() - .5) * (BLK - 14), qz = cz + (rc() - .5) * (BLK - 14);
+        if (Math.abs(qx - x) < (w + cw) / 2 + 1 && Math.abs(qz - z) < (d + cd) / 2 + 1) continue;
+        const cm = new THREE.Mesh(new THREE.BoxGeometry(cw, 2.6, cd), new THREE.MeshStandardMaterial({ color: cols[Math.floor(rc() * cols.length)], roughness: .8 }));
+        cm.position.set(qx, 1.3, qz); add(cm);
+        boxes.push({ x0: qx - cw / 2, x1: qx + cw / 2, z0: qz - cd / 2, z1: qz + cd / 2, cx: qx, cz: qz });
+      }
+      for (let k = 0; k < M.bushBlock; k++) {
+        cluster(cx + (rc() < .5 ? -1 : 1) * (BLK / 2 - 1.5), cz + (rc() - .5) * (BLK - 14), 2);
+        cluster(cx + (rc() - .5) * (BLK - 14), cz + (rc() < .5 ? -1 : 1) * (BLK / 2 - 1.5), 2);
+      }
+    }
+    const inst = new THREE.InstancedMesh(bushGeo, bushMat, bm.length), dm = new THREE.Object3D();
+    bm.forEach((b, i) => { dm.position.set(b[0], .8, b[1]); dm.scale.set(b[2], b[3], b[4]); dm.rotation.set(0, b[5], 0); dm.updateMatrix(); inst.setMatrixAt(i, dm.matrix); });
+    inst.frustumCulled = false; add(inst);
+
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x20262a }), headMat = new THREE.MeshBasicMaterial({ color: M.lampHex });
+    const poolGeo = new THREE.PlaneGeometry(14, 14);
+    const poolMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: .45, color: M.lampCol });
+    const off = BLK / 2 + 1.6;
+    for (let i = -GN; i <= GN; i++) for (let j = -GN; j <= GN; j++) for (const sx of [-1, 1]) for (const sz of [-1, 1]) if (rc() < M.lampP) {
+      const x = i * PITCH + sx * off, z = j * PITCH + sz * off;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(.08, .1, 5.5, 6), poleMat); pole.position.set(x, 2.75, z); add(pole);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(.28, 8, 6), headMat); head.position.set(x, 5.6, z); add(head);
+      const pool = new THREE.Mesh(poolGeo, poolMat); pool.rotation.x = -Math.PI / 2; pool.position.set(x, .06, z); add(pool);
+      lamps.push({ x, z });
+    }
+  }
+
+  // зона
+  const wall = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 45, 96, 1, true), new THREE.MeshBasicMaterial({ map: wallTex, transparent: true, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, depthWrite: false, fog: false }));
+  wall.position.y = 22; scene.add(wall);
+
+  // ---------- collision ----------
+  function collide(e, r) {
+    for (const b of boxes) {
+      const cx = Math.max(b.x0, Math.min(e.x, b.x1)), cz = Math.max(b.z0, Math.min(e.z, b.z1));
+      const dx = e.x - cx, dz = e.z - cz, d2 = dx * dx + dz * dz;
+      if (d2 < r * r) {
+        if (d2 > 1e-6) { const d = Math.sqrt(d2); e.x = cx + dx / d * r; e.z = cz + dz / d * r; }
+        else { const l = e.x - b.x0, rr = b.x1 - e.x, t = e.z - b.z0, bt = b.z1 - e.z, m = Math.min(l, rr, t, bt);
+          if (m === l) e.x = b.x0 - r; else if (m === rr) e.x = b.x1 + r; else if (m === t) e.z = b.z0 - r; else e.z = b.z1 + r; }
+      }
+    }
+    const d = Math.hypot(e.x, e.z); if (d > WR) { e.x *= WR / d; e.z *= WR / d; }
+  }
+  const inBox = (x, z) => boxes.some(b => x > b.x0 - 1.5 && x < b.x1 + 1.5 && z > b.z0 - 1.5 && z < b.z1 + 1.5);
+  function los(a, b) {
+    const d = Math.hypot(a.x - b.x, a.z - b.z), n = Math.ceil(d / 2.5);
+    for (let i = 1; i < n; i++) { const t = i / n, x = a.x + (b.x - a.x) * t, z = a.z + (b.z - a.z) * t; if (boxes.some(q => x > q.x0 && x < q.x1 && z > q.z0 && z < q.z1)) return false; }
+    return true;
+  }
+  const inBush = e => bushes.some(b => Math.hypot(e.x - b.x, e.z - b.z) < 2.1);
+  function freeSpot(minR, maxR) {
+    for (let i = 0; i < 200; i++) { const a = rnd(0, 6.283), r = rnd(minR, maxR), x = Math.cos(a) * r, z = Math.sin(a) * r; if (!inBox(x, z)) return { x, z }; }
+    return { x: 0, z: 0 };
+  }
+
+  // ---------- zone / ping ----------
+  function zoneR(tt) {
+    if (tt < CFG.head) return STAGES[0];
+    const u = tt - CFG.head, i = Math.min(Math.floor(u / CFG.stage), STAGES.length - 1), within = u - i * CFG.stage;
+    const a = STAGES[i], b = STAGES[Math.min(i + 1, STAGES.length - 1)], s0 = CFG.stage - CFG.shrinkLen;
+    if (i >= STAGES.length - 1 || within < s0) return a;
+    return a + (b - a) * ((within - s0) / CFG.shrinkLen);
+  }
+  function nextInfo(tt) {
+    if (tt < CFG.head) return { label: 'Фора', val: Math.ceil(CFG.head - tt) + 'с' };
+    const u = tt - CFG.head, i = Math.min(Math.floor(u / CFG.stage), STAGES.length - 1);
+    if (i >= STAGES.length - 1) return { label: 'Финал', val: STAGES[i] + 'м' };
+    const within = u - i * CFG.stage, s0 = CFG.stage - CFG.shrinkLen;
+    if (within >= s0) return { label: 'Сужается', val: '→' + STAGES[i + 1] + 'м' };
+    return { label: 'Сужение', val: Math.ceil(s0 - within) + 'с → ' + STAGES[i + 1] + 'м' };
+  }
+  function pingState(tt) {
+    if (tt < CFG.head) return { on: false, left: 0, next: CFG.head + CFG.pingOffset - tt };
+    const cyc = (tt - CFG.head + CFG.pingEvery - CFG.pingOffset) % CFG.pingEvery;
+    return { on: cyc < CFG.pingLen, left: CFG.pingLen - cyc, next: CFG.pingEvery - cyc };
+  }
+
+  // ---------- entities ----------
+  let role = 'hider', speedMul = 3, phase = 'menu', t = 0, ents = [], me = null, known = [], wasPing = false, pingStart = -99, logs = [];
+  let yaw = 0, pitch = 0, phoneUp = true, walkPhase = 0, speedNow = 0;
+  const botGeo = new THREE.CylinderGeometry(.34, .38, 1.25, 8), headGeo = new THREE.SphereGeometry(.21, 8, 6);
+  const beamGeo = new THREE.CylinderGeometry(.14, .14, 90, 8, 1, true);
+  function mkEnt(name, r, isMe, p) {
+    const e = { name, role: r, me: isMe, x: p.x, z: p.z, tx: null, tz: null, wait: 0, alive: true, out: 0, stuck: 0, lx: p.x, lz: p.z, react: 0, hasTg: false, vis: null };
+    const col = r === 'hider' ? 0x3dff9a : 0xffb02e;
+    e.g = new THREE.Group();
+    const body = new THREE.Mesh(botGeo, new THREE.MeshStandardMaterial({ color: 0x0b0e10, roughness: .9, emissive: col, emissiveIntensity: .05 })); body.position.y = .95;
+    const hd = new THREE.Mesh(headGeo, body.material); hd.position.y = 1.78;
+    e.beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .5, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+    e.beam.position.y = 45; e.beam.visible = false;
+    e.g.add(body, hd, e.beam); e.g.visible = !isMe; scene.add(e.g); return e;
+  }
+  function log(m) { logs.unshift(m); logs = logs.slice(0, 3); $('#log').innerHTML = logs.map(l => '<div>' + l + '</div>').join(''); }
+  function newGame() {
+    for (const e of ents) scene.remove(e.g);
+    ents = []; t = 0; known = []; wasPing = false; pingStart = -99; logs = []; $('#log').innerHTML = '';
+    const hn = ['Аня', 'Макс', 'Дима', 'Лена', 'Саша', 'Ира', 'Паша'], sn = ['Кира', 'Олег', 'Рома'];
+    const N = sel.players, ns = Math.max(1, Math.round(N / 4)), nh = N - ns;
+    let hi = 0;
+    for (let i = 0; i < nh; i++) { const isMe = role === 'hider' && i === 0; ents.push(mkEnt(isMe ? 'Вы' : hn[hi++], 'hider', isMe, freeSpot(40, WR - 20))); }
+    let si = 0;
+    for (let i = 0; i < ns; i++) { const isMe = role === 'seeker' && i === 0; ents.push(mkEnt(isMe ? 'Вы' : sn[si++], 'seeker', isMe, { x: rnd(-6, 6), z: rnd(-6, 6) })); }
+    me = ents.find(e => e.me); yaw = Math.atan2(-me.x, -me.z) + rnd(-.4, .4); pitch = 0; phoneUp = true;
+    log(role === 'hider' ? 'Разбегайтесь. У охотников фора 30 секунд.' : 'Охотники ждут 30 секунд. Ищите по пингам.');
+  }
+
+  // ---------- phone + hands (viewmodel, привязан к голове) ----------
+  const vm = new THREE.Group(); vmScene.add(vm);
+  const phone = new THREE.Group(); vm.add(phone);
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.13, .27, .011), new THREE.MeshStandardMaterial({ color: 0x0b0c0d, roughness: .4, metalness: .6 })); phone.add(body);
+  const scrCanvas = document.createElement('canvas'); scrCanvas.width = 384; scrCanvas.height = 768; const sc = scrCanvas.getContext('2d');
+  const scrTex = new THREE.CanvasTexture(scrCanvas); scrTex.anisotropy = 4;
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(.121, .26), new THREE.MeshBasicMaterial({ map: scrTex })); screen.position.z = .0058; phone.add(screen);
+  phone.position.set(0, -.12, -.42); phone.rotation.x = -.3;
+  const skin = new THREE.MeshStandardMaterial({ color: 0x8d6650, roughness: .8 }), sleeve = new THREE.MeshStandardMaterial({ color: 0x1b2024, roughness: 1 });
+  function limb(parent, a, b, w, mat) {
+    const dir = new THREE.Vector3().subVectors(b, a), len = dir.length();
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, w * .85, len), mat);
+    m.position.copy(a).add(b).multiplyScalar(.5); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.normalize()); parent.add(m); return m;
+  }
+  for (const s of [-1, 1]) {
+    const V = (x, y, z) => new THREE.Vector3(s * x, y, z);
+    limb(phone, V(.07, -.07, -.022), V(.105, -.085, -.03), .05, skin);             // ладонь сбоку
+    for (let f = 0; f < 3; f++) { const fm = new THREE.Mesh(new THREE.BoxGeometry(.03, .026, .026), skin); fm.position.set(s * .068, .005 - f * .036, .0); phone.add(fm); } // пальцы у края
+    limb(phone, V(.07, .07, .016), V(.052, .05, .014), .017, skin);                // большой палец поверх экрана
+    limb(phone, V(.14, -.07, -.04), V(.27, -.34, .3), .062, sleeve);               // предплечье уходит вниз к телу
+    limb(phone, V(.14, -.07, -.04), V(.12, -.075, -.02), .05, skin);               // запястье
+  }
+  const lag = { y: 0, x: 0 };
+
+  function drawPhone() {
+    const c = sc, W = 384, H = 768, R = zoneR(t), ps = pingState(t), n = nextInfo(t);
+    c.fillStyle = '#060a09'; c.fillRect(0, 0, W, H);
+    const T = (s, x, y, sz, col, al, wt) => { c.font = (wt || 600) + ' ' + sz + 'px "JetBrains Mono",monospace'; c.fillStyle = col; c.textAlign = al || 'left'; c.fillText(s, x, y); };
+    T('ВРЕМЯ', 22, 40, 15, '#6f857c'); T(fmt(CFG.round - t), 22, 82, 44, '#d7e6df');
+    T('ЗОНА', W - 22, 40, 15, '#6f857c', 'right'); T(Math.round(R) + 'М', W - 22, 82, 44, '#ff3b3b', 'right');
+    c.strokeStyle = '#1c2a24'; c.lineWidth = 2; c.strokeRect(22, 100, W - 44, 40);
+    T((n.label + ' ' + n.val).toUpperCase(), W / 2, 127, 17, '#d7e6df', 'center');
+    if (ps.on) { c.fillStyle = 'rgba(255,59,59,.2)'; c.fillRect(22, 150, W - 44, 34); c.strokeStyle = '#ff3b3b'; c.strokeRect(22, 150, W - 44, 34); T('● ПИНГ: ВСЕ ВИДНЫ', W / 2, 174, 17, '#ff3b3b', 'center'); }
+    else T('ПИНГ ЧЕРЕЗ ' + Math.ceil(ps.next) + 'с', W / 2, 174, 15, '#6f857c', 'center');
+    // карта
+    const CX = W / 2, CY = 450, MR = 170, S = MR / 80;
+    c.save(); c.beginPath(); c.arc(CX, CY, MR, 0, 7); c.clip(); c.fillStyle = '#0a110f'; c.fillRect(0, 190, W, 520);
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const P = (x, z) => { const dx = x - me.x, dz = z - me.z; return [CX + (dx * rx + dz * rz) * S, CY - (dx * fx + dz * fz) * S]; };
+    c.fillStyle = 'rgba(150,180,170,.17)';
+    for (const b of boxes) {
+      if (Math.abs(b.cx - me.x) > 120 || Math.abs(b.cz - me.z) > 120) continue;
+      c.beginPath(); [[b.x0, b.z0], [b.x1, b.z0], [b.x1, b.z1], [b.x0, b.z1]].forEach(([x, z], i) => { const [px, py] = P(x, z); i ? c.lineTo(px, py) : c.moveTo(px, py); }); c.fill();
+    }
+    c.fillStyle = 'rgba(40,150,95,.35)'; for (const b of bushes) { const [px, py] = P(b.x, b.z); c.beginPath(); c.arc(px, py, 3, 0, 7); c.fill(); }
+    const [zx, zy] = P(0, 0), zr = R * S;
+    c.beginPath(); c.rect(0, 0, W, H); c.arc(zx, zy, zr, 0, 7, true); c.fillStyle = 'rgba(255,59,59,.24)'; c.fill('evenodd');
+    c.beginPath(); c.arc(zx, zy, zr, 0, 7); c.strokeStyle = '#ff3b3b'; c.lineWidth = 3; c.stroke();
+    if (phase === 'run') {
+      const ni = Math.min(Math.floor(Math.max(0, t - CFG.head) / CFG.stage) + 1, STAGES.length - 1);
+      c.setLineDash([8, 8]); c.beginPath(); c.arc(zx, zy, STAGES[ni] * S, 0, 7); c.strokeStyle = 'rgba(255,59,59,.45)'; c.lineWidth = 2; c.stroke(); c.setLineDash([]);
+    }
+    if (ps.on || phase === 'over') for (const e of ents) if (!e.me && e.alive) {
+      const [px, py] = P(e.x, e.z); c.fillStyle = e.role === 'hider' ? '#3dff9a' : '#ffb02e'; c.beginPath(); c.arc(px, py, 7, 0, 7); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = 1.5; c.beginPath(); c.arc(px, py, 11, 0, 7); c.stroke();
+    }
+    c.restore();
+    c.strokeStyle = '#1c2a24'; c.lineWidth = 3; c.beginPath(); c.arc(CX, CY, MR, 0, 7); c.stroke();
+    c.fillStyle = me.role === 'hider' ? '#3dff9a' : '#ffb02e'; c.beginPath(); c.moveTo(CX, CY - 13); c.lineTo(CX + 9, CY + 9); c.lineTo(CX - 9, CY + 9); c.closePath(); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 2; c.stroke();
+    T('С', CX, CY - MR + 22, 16, '#6f857c', 'center');
+    const alive = ents.filter(e => e.role === 'hider' && e.alive).length;
+    c.fillStyle = '#0d1311'; c.fillRect(0, 700, W, 68); c.fillStyle = me.role === 'hider' ? '#3dff9a' : '#ffb02e'; c.fillRect(0, 700, 6, 68);
+    T(me.role === 'hider' ? 'БЕГЛЕЦ' : 'ОХОТНИК', 22, 742, 22, me.role === 'hider' ? '#3dff9a' : '#ffb02e');
+    T('живых беглецов: ' + alive, W - 22, 742, 15, '#6f857c', 'right');
+    scrTex.needsUpdate = true;
+  }
+
+  // ---------- input ----------
+  const keys = {}; let mdown = false, locked = false; const joy = { id: null, sx: 0, sy: 0, x: 0, y: 0 }, look = { id: null, x: 0, y: 0 };
+  addEventListener('keydown', e => { const k = e.key.toLowerCase(); keys[k] = true; if (k === 'q' || k === 'f') phoneUp = !phoneUp; if (phase === 'run' && ['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright',' '].includes(k)) e.preventDefault(); });
+  addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+  addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+  document.addEventListener('pointerlockchange', () => { locked = document.pointerLockElement === cvs; if (!locked && phase === 'run') { phase = 'pause'; show('sPause'); } });
+  addEventListener('mousemove', e => { if (phase !== 'run') return; if (locked || mdown) { yaw -= e.movementX * .0022; pitch = Math.max(-1.3, Math.min(1.3, pitch - e.movementY * .0022)); } });
+  cvs.addEventListener('mousedown', () => { mdown = true; if (phase === 'run' && !locked) { try { const p = cvs.requestPointerLock && cvs.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} } });
+  addEventListener('mouseup', () => { mdown = false; });
+  const stage = $('#stage'), stick = $('#stick');
+  stage.addEventListener('touchstart', e => {
+    for (const tc of e.changedTouches) {
+      if (e.target.closest && e.target.closest('button')) continue;
+      const r = stage.getBoundingClientRect(), x = tc.clientX - r.left, y = tc.clientY - r.top;
+      if (x < r.width / 2 && joy.id === null) { joy.id = tc.identifier; joy.sx = x; joy.sy = y; joy.x = joy.y = 0; stick.style.display = 'block'; stick.style.left = x + 'px'; stick.style.top = y + 'px'; stick.firstElementChild.style.transform = ''; }
+      else if (look.id === null) { look.id = tc.identifier; look.x = tc.clientX; look.y = tc.clientY; }
+    }
+  }, { passive: true });
+  stage.addEventListener('touchmove', e => {
+    for (const tc of e.changedTouches) {
+      if (tc.identifier === joy.id) { const r = stage.getBoundingClientRect(); let dx = (tc.clientX - r.left - joy.sx) / 50, dy = (tc.clientY - r.top - joy.sy) / 50; const l = Math.hypot(dx, dy); if (l > 1) { dx /= l; dy /= l; } joy.x = dx; joy.y = dy; stick.firstElementChild.style.transform = 'translate(' + dx * 40 + 'px,' + dy * 40 + 'px)'; }
+      else if (tc.identifier === look.id && phase === 'run') { yaw -= (tc.clientX - look.x) * .005; pitch = Math.max(-1.3, Math.min(1.3, pitch - (tc.clientY - look.y) * .005)); look.x = tc.clientX; look.y = tc.clientY; }
+    }
+    e.preventDefault();
+  }, { passive: false });
+  const tend = e => { for (const tc of e.changedTouches) { if (tc.identifier === joy.id) { joy.id = null; joy.x = joy.y = 0; stick.style.display = 'none'; } if (tc.identifier === look.id) look.id = null; } };
+  stage.addEventListener('touchend', tend); stage.addEventListener('touchcancel', tend);
+  $('#bPhone').addEventListener('click', () => { phoneUp = !phoneUp; });
+
+  // ---------- game update ----------
+  function stepTo(e, tx, tz, sp, dt) {
+    const dx = tx - e.x, dz = tz - e.z, d = Math.hypot(dx, dz); if (d < .6) return true;
+    const m = Math.min(d, sp * dt); e.x += dx / d * m; e.z += dz / d * m; collide(e, .45); return false;
+  }
+  function update(dt, rdt) {
+    t += dt;
+    const R = zoneR(t), ps = pingState(t), frozen = t < CFG.head;
+    if (ps.on && !wasPing) { pingStart = t; known = ents.filter(e => e.alive).map(e => ({ x: e.x + (Math.random() - .5) * 2 * DF.noise, z: e.z + (Math.random() - .5) * 2 * DF.noise, role: e.role, name: e.name })); beep(); }
+    wasPing = ps.on;
+
+    // игрок
+    speedNow = 0;
+    if (me.alive && !(me.role === 'seeker' && frozen)) {
+      let f = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), s = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
+      let sprint = !!keys.shift;
+      if (joy.id !== null) { f = -joy.y; s = joy.x; sprint = Math.hypot(joy.x, joy.y) > .92; }
+      const l = Math.hypot(f, s);
+      if (l > .05) {
+        const k = Math.min(1, l) / l, sp = sprint ? 5.2 : 3.2;
+        me.x += (-Math.sin(yaw) * f + Math.cos(yaw) * s) * k * sp * rdt; me.z += (-Math.cos(yaw) * f - Math.sin(yaw) * s) * k * sp * rdt;
+        collide(me, .45); speedNow = Math.min(1, l) * sp;
+      }
+    }
+    // боты
+    for (const e of ents) {
+      if (e.me || !e.alive) continue;
+      if (e.role === 'seeker' && frozen) continue;
+      if (e.role === 'hider') {
+        let near = null, nd = 1e9; for (const s of ents) if (s.role === 'seeker' && s.alive && !frozen) { const d = Math.hypot(e.x - s.x, e.z - s.z); if (d < nd) { nd = d; near = s; } }
+        let sp = 3.0;
+        if (near && nd < DF.fleeD && los(e, near)) { const dx = e.x - near.x, dz = e.z - near.z, l = Math.hypot(dx, dz) || 1; e.tx = e.x + dx / l * 30; e.tz = e.z + dz / l * 30; sp = DF.fleeSp; e.wait = 0; }
+        else if (Math.hypot(e.x, e.z) > R * .9) { e.tx = e.x * .6; e.tz = e.z * .6; e.wait = 0; }
+        if (e.wait > 0) { e.wait -= rdt; continue; }
+        if (e.tx === null) {
+          const cand = bushes.filter(b => Math.hypot(b.x, b.z) < R * .85);
+          let b = null;
+          if (DF.smartHide === 0 || !cand.length) b = freeSpot(0, R * .85);
+          else if (DF.smartHide === 1) b = cand[Math.floor(Math.random() * cand.length)];
+          else {
+            const sk = known.filter(k => k.role === 'seeker'); let best = -1;
+            for (let i = 0; i < 6; i++) { const c = cand[Math.floor(Math.random() * cand.length)]; const sc = sk.length ? Math.min(...sk.map(k => Math.hypot(c.x - k.x, c.z - k.z))) : Math.hypot(c.x - e.x, c.z - e.z) * .01; if (sc > best) { best = sc; b = c; } }
+          }
+          e.tx = b.x; e.tz = b.z;
+        }
+        if (stepTo(e, e.tx, e.tz, sp, rdt)) { e.tx = null; e.wait = rnd(5, 12); }
+      } else {
+        const prey = ents.filter(h => h.role === 'hider' && h.alive);
+        let tg = null, td = 1e9;
+        for (const h of prey) { const d = Math.hypot(e.x - h.x, e.z - h.z), sight = inBush(h) ? DF.bushSight : DF.sight; if (d < sight && d < td && los(e, h)) { td = d; tg = h; } }
+        if (!tg) {
+          const ks = known.filter(k => k.role === 'hider' && prey.some(p => p.name === k.name));
+          if (ks.length) {
+            if (DF.coord) { const sks = ents.filter(q => q.role === 'seeker' && q.alive); ks.sort((a, b) => Math.hypot(e.x - a.x, e.z - a.z) - Math.hypot(e.x - b.x, e.z - b.z)); tg = ks[Math.max(0, sks.indexOf(e)) % ks.length]; }
+            else for (const k of ks) { const d = Math.hypot(e.x - k.x, e.z - k.z); if (d < td) { td = d; tg = k; } }
+          }
+        }
+        if (tg && !e.hasTg) { e.hasTg = true; e.react = DF.react; } if (!tg) e.hasTg = false;
+        if (e.react > 0) { e.react -= rdt; continue; }
+        if (tg) { e.tx = tg.x; e.tz = tg.z; }
+        else if (e.tx === null) {
+          if (DF.patrol) {
+            const cand = bushes.map((b, i) => ({ b, i })).filter(o => Math.hypot(o.b.x, o.b.z) < R * .9 && !(e.vis && e.vis.has(o.i)));
+            if (!cand.length) { e.vis = new Set(); const p = freeSpot(0, R * .7); e.tx = p.x; e.tz = p.z; }
+            else { cand.sort((a, b) => Math.hypot(e.x - a.b.x, e.z - a.b.z) - Math.hypot(e.x - b.b.x, e.z - b.b.z)); const o = cand[Math.floor(Math.random() * Math.min(3, cand.length))]; (e.vis = e.vis || new Set()).add(o.i); e.tx = o.b.x; e.tz = o.b.z; }
+          } else { const p = freeSpot(0, R * .7); e.tx = p.x; e.tz = p.z; }
+        }
+        if (stepTo(e, e.tx, e.tz, DF.seekSpeed, rdt)) { e.tx = null; known = known.filter(k => Math.hypot(k.x - e.x, k.z - e.z) > 4); }
+      }
+      e.stuck += rdt; if (e.stuck > 1.6) { if (Math.hypot(e.x - e.lx, e.z - e.lz) < .8 && e.tx !== null) { const p = freeSpot(0, R * .8); e.tx = p.x; e.tz = p.z; e.wait = 0; } e.stuck = 0; e.lx = e.x; e.lz = e.z; }
+    }
+    // зона
+    for (const e of ents) {
+      if (!e.alive || e.role !== 'hider') continue;
+      if (Math.hypot(e.x, e.z) > R) { e.out += dt; if (e.out > CFG.outLimit) { e.alive = false; log(e.me ? 'Вы вылетели: слишком долго вне зоны.' : e.name + ' вылетает из зоны.'); } } else e.out = 0;
+    }
+    // поимка
+    for (const s of ents) if (s.role === 'seeker' && s.alive && !frozen)
+      for (const h of ents) if (h.role === 'hider' && h.alive && Math.hypot(s.x - h.x, s.z - h.z) <= CFG.catchR) {
+        h.alive = false; log(h.me ? s.name + ' поймал вас.' : (s.me ? 'Вы поймали ' + h.name + '.' : s.name + ' поймал ' + h.name + '.'));
+      }
+    if (me.role === 'hider' && !me.alive) return finish(false, 'Вас поймали или выбили из зоны');
+    const left = ents.filter(e => e.role === 'hider' && e.alive).length;
+    if (left === 0) return finish(me.role === 'seeker', 'Все беглецы пойманы');
+    if (t >= CFG.round) return finish(me.role === 'hider', 'Время вышло, выжили: ' + left);
+  }
+  function finish(win, why) {
+    phase = 'over'; if (document.exitPointerLock) document.exitPointerLock();
+    $('#ovTitle').textContent = win ? 'Победа' : 'Поражение'; $('#ovTitle').style.color = win ? 'var(--hider)' : 'var(--zone)';
+    $('#ovText').textContent = why + '. Время раунда: ' + fmt(Math.min(t, CFG.round)) + '. ' + MAPS[sel.map].name + ', ' + DF.label.toLowerCase() + '.';
+    show('sEnd');
+  }
+
+  // ---------- звук пинга ----------
+  let actx = null;
+  function beep() { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); const o = actx.createOscillator(), g = actx.createGain(); o.type = 'sine'; o.frequency.value = 880; g.gain.value = .0001; o.connect(g); g.connect(actx.destination); const n = actx.currentTime; g.gain.exponentialRampToValueAtTime(.12, n + .02); g.gain.exponentialRampToValueAtTime(.0001, n + .5); o.start(n); o.stop(n + .55); } catch (_) {} }
+
+  // ---------- render ----------
+  function resize() {
+    const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+    renderer.setSize(w, h, false); camera.aspect = vmCam.aspect = w / h; camera.fov = vmCam.fov = w / h < .9 ? 82 : 72; camera.updateProjectionMatrix(); vmCam.updateProjectionMatrix();
+  }
+  addEventListener('resize', resize);
+  const vig = $('#vig'), banner = $('#banner');
+  let frame = 0, last = performance.now(), prevYaw = 0, prevPitch = 0;
+
+  function render(rdt) {
+    if (phase === 'menu') yaw += rdt * .08;
+    banner.hidden = phase === 'menu';
+    const R = zoneR(t), ps = pingState(t), pinging = ps.on || phase === 'over';
+    wall.scale.set(R, 1, R);
+    camera.position.set(me.x, 1.65 + Math.sin(walkPhase * 2) * .035 * Math.min(1, speedNow / 3), me.z);
+    camera.rotation.set(pitch, yaw, Math.sin(walkPhase) * .006 * Math.min(1, speedNow / 3));
+    camGlow.position.copy(camera.position); camGlow.color.set(pinging ? 0xff5050 : 0x66ffcc);
+    // лампы
+    if (frame % 8 === 0) { const s = lamps.map(l => ({ l, d: (l.x - me.x) ** 2 + (l.z - me.z) ** 2 })).sort((a, b) => a.d - b.d); lampLights.forEach((L, i) => { const p = s[i]; if (p) L.position.set(p.l.x, 5.3, p.l.z); }); }
+    // боты
+    for (const e of ents) if (!e.me) {
+      e.g.visible = e.alive; e.g.position.set(e.x, 0, e.z);
+      if (e.tx !== null) e.g.rotation.y = Math.atan2(e.tx - e.x, e.tz - e.z);
+      e.beam.visible = e.alive && pinging;
+    }
+    // viewmodel
+    const dy = ((yaw - prevYaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI, dp = pitch - prevPitch; prevYaw = yaw; prevPitch = pitch;
+    lag.y = THREE.MathUtils.clamp(lag.y + dy * .9, -.35, .35); lag.x = THREE.MathUtils.clamp(lag.x - dp * .9, -.3, .3);
+    const k = 1 - Math.pow(.0005, rdt); lag.y -= lag.y * k; lag.x -= lag.x * k;
+    walkPhase += speedNow * rdt * 1.7;
+    const up = phoneUp ? 1 : 0, bob = Math.min(1, speedNow / 3);
+    vm.position.x = Math.sin(walkPhase) * .007 * bob; vm.position.y += ((phoneUp ? 0 : -.62) + Math.abs(Math.cos(walkPhase)) * -.008 * bob - vm.position.y) * Math.min(1, rdt * 9);
+    vm.rotation.y = lag.y; vm.rotation.x = lag.x + (1 - up) * .25; vm.rotation.z = Math.sin(walkPhase) * .01 * bob;
+    phoneLight.position.set(0, -.1, -.3); phoneLight.color.set(ps.on ? 0xff5a5a : 0x66ffcc);
+    if (frame % 2 === 0 && phoneUp) drawPhone();
+    vig.className = 'vig' + (me.role === 'hider' && Math.hypot(me.x, me.z) > R ? ' out' : (ps.on ? ' ping' : ''));
+    // баннер
+    banner.className = 'banner'; const frozen = t < CFG.head;
+    if (phase === 'menu') banner.textContent = '';
+    else if (me.role === 'hider' && Math.hypot(me.x, me.z) > R) { banner.classList.add('warn'); banner.textContent = 'Вне зоны! Вылет через ' + Math.max(0, Math.ceil(CFG.outLimit - me.out)) + ' с'; }
+    else if (ps.on) { banner.classList.add('ping'); banner.textContent = 'Пинг: все видны ещё ' + Math.ceil(ps.left) + ' с'; }
+    else if (frozen) banner.textContent = me.role === 'hider' ? 'Фора: бегите, охотники ждут ' + Math.ceil(CFG.head - t) + ' с' : 'Вы на старте. Выход через ' + Math.ceil(CFG.head - t) + ' с';
+    else banner.textContent = (me.role === 'hider' && inBush(me) ? 'Вы в кустах: охотники видят только вблизи · ' : '') + 'до пинга ' + Math.ceil(ps.next) + ' с';
+    renderer.clear(); renderer.render(scene, camera); renderer.clearDepth(); if (phoneUp || vm.position.y > -.58) renderer.render(vmScene, vmCam);
+  }
+  function loop(now) {
+    const rdt = Math.min((now - last) / 1000, .06); last = now; frame++;
+    if (phase === 'run') update(rdt * speedMul, rdt);
+    render(rdt); requestAnimationFrame(loop);
+  }
+
+  // ---------- меню ----------
+  const sel = { map: 'city', diff: 'normal', role: 'hider', players: 6, speed: 3 };
+  try { Object.assign(sel, JSON.parse(localStorage.getItem('mh3d') || '{}')); } catch (_) {}
+  if (!MAPS[sel.map]) sel.map = 'city'; if (!DIFF[sel.diff]) sel.diff = 'normal';
+  const save = () => { try { localStorage.setItem('mh3d', JSON.stringify(sel)); } catch (_) {} };
+  const SCREENS = ['sMain', 'sSetup', 'sOnline', 'sPause', 'sEnd'];
+  function show(id) { SCREENS.forEach(x => { $('#' + x).hidden = x !== id; }); $('#overlay').classList.remove('hidden'); }
+  function seg(id, opts, key, cb) {
+    const el = $('#' + id); el.innerHTML = '';
+    for (const o of opts) {
+      const b = document.createElement('button'); b.textContent = o.l; b.setAttribute('aria-pressed', String(sel[key] === o.v));
+      b.addEventListener('click', () => { sel[key] = o.v; save(); [...el.children].forEach(c => c.setAttribute('aria-pressed', String(c === b))); cb && cb(); });
+      el.appendChild(b);
+    }
+  }
+  function renderMaps() {
+    const box = $('#mapCards'); box.innerHTML = '';
+    const mk = (title, desc, grad, pressed, locked, onClick) => {
+      const b = document.createElement('button'); b.className = 'card'; b.disabled = locked; b.setAttribute('aria-pressed', String(pressed));
+      b.innerHTML = '<div class="pv" style="background:' + grad + '"></div><div class="tx"><b></b><span></span></div>';
+      b.querySelector('b').textContent = title + (locked ? ' · скоро' : ''); b.querySelector('span').textContent = desc;
+      if (onClick) b.addEventListener('click', onClick); box.appendChild(b); return b;
+    };
+    for (const k of Object.keys(MAPS)) {
+      const M = MAPS[k];
+      mk(M.name, M.desc, 'linear-gradient(90deg,' + M.prev[0] + ',' + M.prev[1] + ')', sel.map === k, false, () => { sel.map = k; save(); renderMaps(); });
+    }
+    mk('Метро', 'Тоннели и станции.', 'linear-gradient(90deg,#10161a,#2a4a5a)', false, true);
+    mk('Лес', 'Деревья, туман, холмы.', 'linear-gradient(90deg,#0a140d,#244a30)', false, true);
+  }
+  const updHint = () => { $('#diffHint').textContent = DIFF[sel.diff].hint; };
+  seg('segDiff', [{ v: 'easy', l: 'Лёгкий' }, { v: 'normal', l: 'Нормальный' }, { v: 'hard', l: 'Сложный' }], 'diff', updHint);
+  seg('segRole', [{ v: 'hider', l: 'Беглец' }, { v: 'seeker', l: 'Охотник' }], 'role');
+  seg('segPl', [{ v: 4, l: '4' }, { v: 6, l: '6' }, { v: 8, l: '8' }], 'players');
+  seg('segSp', [{ v: 1, l: '×1 как есть' }, { v: 3, l: '×3 быстрее' }], 'speed');
+  renderMaps(); updHint();
+
+  function lock() { try { const p = cvs.requestPointerLock && cvs.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (_) {} }
+  function startGame() {
+    role = sel.role; speedMul = sel.speed; DF = DIFF[sel.diff];
+    if (curKey !== sel.map) buildMap(sel.map);
+    newGame();
+    $('#mapChip').hidden = false; $('#mapChip').textContent = MAPS[sel.map].name + ' · ' + DF.label;
+    phase = 'run'; $('#overlay').classList.add('hidden'); lock();
+  }
+  function toMenu() {
+    phase = 'menu'; if (document.exitPointerLock) document.exitPointerLock(); $('#mapChip').hidden = true; show('sMain');
+  }
+  $('#mBots').addEventListener('click', () => show('sSetup'));
+  $('#mOnline').addEventListener('click', () => show('sOnline'));
+  $('#sBack').addEventListener('click', () => show('sMain'));
+  $('#oBack').addEventListener('click', () => show('sMain'));
+  $('#sStart').addEventListener('click', startGame);
+  $('#eAgain').addEventListener('click', startGame);
+  $('#eMenu').addEventListener('click', toMenu);
+  $('#bMenu').addEventListener('click', toMenu);
+  $('#pMenu').addEventListener('click', toMenu);
+  $('#pResume').addEventListener('click', () => { phase = 'run'; $('#overlay').classList.add('hidden'); lock(); });
+
+  role = sel.role; speedMul = sel.speed; DF = DIFF[sel.diff];
+  buildMap(sel.map); newGame(); resize(); drawPhone(); show('sMain'); requestAnimationFrame(loop);
+})();
+</script>
+
+</body></html>
