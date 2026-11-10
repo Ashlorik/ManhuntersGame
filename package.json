@@ -1,0 +1,13 @@
+{
+  "name": "manhunt-lan-server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LAN lobby server for Manhunt FPV",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
